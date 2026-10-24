@@ -70,25 +70,36 @@ static int graeffeRootsFinder(const double *coeff, int size, int max_iterations)
         if (!ok) break;
 
         // calculate estimated roots and compare
+
+        // distribute the loop to move conditions out
         double m = pow(2.0, iter + 1);
         for (int i = 0; i < n && ok; i++) {
             if (next_coeff[i] == 0 || !isfinite(next_coeff[i + 1] / next_coeff[i])) {
                 ok = 0;
                 continue;
             }
-
-            double ratio = fabs(next_coeff[i + 1] / next_coeff[i]);
-            next_estimated_roots[i] = pow(ratio, 1.0 / m);
         }
 
         if (!ok) break; // if bad; coefficients underflowing
 
+        // Scalar Expand the ratio buffer
+        double ratio_buf[n];
+        for (int i = 0; i < n; i++) {
+            ratio_buf[i] = fabs(next_coeff[i + 1] / next_coeff[i]);
+            next_estimated_roots[i] = pow(ratio_buf[i], 1.0 / m);
+        }
+
+        // Applied if conversion to flatten the conditional statements
         double change = 0.0;
         for (int i = 0; i <= n; i++) {
-            double scale = fmax(estimated_roots[i], next_estimated_roots[i]);
-            if (scale > 0.0) {
-                change = fmax(change, fabs(estimated_roots[i] - next_estimated_roots[i]) / scale);
-            }
+            double a = estimated_roots[i];
+            double b = next_estimated_roots[i];
+
+            double scale = fmax(a, b);
+            double delta = fabs(a - b);
+            double ratio = (scale > 0.0) ? delta / scale : 0.0;
+
+            change = fmax(change, ratio);
         }
         
         // swap buffers instead of copying
