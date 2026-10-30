@@ -2,10 +2,16 @@
 CXX := clang
 
 # flags
-CXXFLAGS := -O3 -fno-inline-functions
+CXXFLAGS := -O3 -fno-math-errno -fopenmp=libomp \
+			 -fveclib=libmvec -ffast-math \
+			 -fno-inline-functions \
+			 -Rpass=loop-vectorize \
+			 -Rpass-missed=loop-vectorize \
+			 -Rpass-analysis=loop-vectorize \
+			 -march=native
 ASMFLAGS := -g -fverbose-asm
 LDFLAGS  :=         # e.g. -Llib
-LDLIBS   := -lm
+LDLIBS   := -lm -fopenmp=libomp
 
 SRC_DIR   := src
 BUILD_DIR := build

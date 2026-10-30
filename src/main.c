@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <time.h>
+#include <omp.h>
 
 #define MAX_SIZE 64  /* max number of coefficients, i.e. max degree is MAX_SIZE - 1 */
 #define TOLERANCE 1e-3
@@ -48,22 +49,29 @@ static int graeffeRootsFinder(const double *coeff, int size, int max_iterations)
 
     // perform root squaring
     for (int iter = 0; iter < max_iterations; iter++) {
-        int ok = 1;
+        int ok = 1;   // shared variable
 
-        for (int j = 0; j <= n && ok; j++) {
+        for (int j = 0; j <= n; j++) {
+            if (!ok) break;
+
             double sum = 0.0;
             int outer_sign = (j % 2 == 0) ? 1 : -1;
 
+            #pragma omp parallel for reduction(+:sum)
             for (int k = 1; k <= j; k++) {
                 if (j - k >= 0 && j + k <= n) {
                     double inner_sign = (k % 2 == 1) ? -1 * outer_sign : outer_sign;
                     sum += inner_sign * 2.0 * curent_coeff[j - k] * curent_coeff[j + k];
                 }
             }
+            #pragma omp barrier
 
             next_coeff[j] = (outer_sign * curent_coeff[j] * curent_coeff[j]) + sum;
 
-            if (!isfinite(sum) || !isfinite(next_coeff[j])) ok = 0;
+            if (!isfinite(sum) || !isfinite(next_coeff[j])) {
+                #pragma omp critical
+                ok = 0;   // modifying shared data in critical section
+            }
         }
 
         // if bad; coefficients might be exploding
@@ -73,20 +81,22 @@ static int graeffeRootsFinder(const double *coeff, int size, int max_iterations)
 
         // distribute the loop to move conditions out
         double m = pow(2.0, iter + 1);
-        for (int i = 0; i < n && ok; i++) {
-            if (next_coeff[i] == 0 || !isfinite(next_coeff[i + 1] / next_coeff[i])) {
-                ok = 0;
-                continue;
-            }
+
+        int ok_local = 1;
+        #pragma omp parallel for reduction(&&:ok_local)
+        for (int i = 0; i < n; i++) {
+            int good = next_coeff[i] == 0 || !isfinite(next_coeff[i + 1] / next_coeff[i]);
+            ok_local = ok_local && good;
         }
+        ok = ok_local;
 
         if (!ok) break; // if bad; coefficients underflowing
 
         // Scalar Expand the ratio buffer
-        double ratio_buf[n];
+        #pragma omp parallel for
         for (int i = 0; i < n; i++) {
-            ratio_buf[i] = fabs(next_coeff[i + 1] / next_coeff[i]);
-            next_estimated_roots[i] = pow(ratio_buf[i], 1.0 / m);
+            double r = fabs(next_coeff[i + 1] / next_coeff[i]);
+            next_estimated_roots[i] = pow(r, 1.0 / m);
         }
 
         // Applied if conversion to flatten the conditional statements
