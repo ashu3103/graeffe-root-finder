@@ -101,15 +101,19 @@ static int graeffeRootsFinder(const double *coeff, int size, int max_iterations)
 
         // Applied if conversion to flatten the conditional statements
         double change = 0.0;
-        for (int i = 0; i <= n; i++) {
-            double a = estimated_roots[i];
-            double b = next_estimated_roots[i];
-
-            double scale = fmax(a, b);
-            double delta = fabs(a - b);
-            double ratio = (scale > 0.0) ? delta / scale : 0.0;
-
-            change = fmax(change, ratio);
+        #pragma omp parallel
+        {
+            double local = 0.0;
+            #pragma omp for nowait
+            for (int i = 0; i <= n; i++) {
+                double a = estimated_roots[i];
+                double b = next_estimated_roots[i];
+                double scale = fmax(a, b);
+                double ratio = (scale > 0.0) ? fabs(a - b) / scale : 0.0;
+                if (ratio > local) local = ratio;
+            }
+            #pragma omp critical
+            if (local > change) change = local;
         }
         
         // swap buffers instead of copying
